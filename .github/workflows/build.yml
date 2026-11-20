@@ -68,6 +68,8 @@ jobs:
         run: bash scripts/build-all.sh
 
       - name: 校验 ipk
+        env:
+          PKG_VERSION: ${{ steps.ver.outputs.version }}
         run: |
           set -e
           ls dist/

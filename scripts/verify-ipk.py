@@ -26,6 +26,14 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+
+# 期望版本：环境变量 PKG_VERSION > 仓库根 .upstream-version > 兜底
+_VERFILE = ROOT / ".upstream-version"
+EXPECT_VERSION = os.environ.get("PKG_VERSION", "").strip()
+if not EXPECT_VERSION and _VERFILE.exists():
+    EXPECT_VERSION = _VERFILE.read_text(encoding="utf-8").strip()
+EXPECT_VERSION = EXPECT_VERSION or "1.14.0"
+EXPECT_PKGVER = "%s-1" % EXPECT_VERSION
 DIST = ROOT / "dist"
 
 EM = {
@@ -148,15 +156,13 @@ def sh_syntax(text: bytes):
 
 def check_main(path: Path):
     import re
-    m = re.match(r"^workbuddy2api_([0-9.]+)-([0-9]+)_(.+)$", path.stem)
+    m = re.match(r"^workbuddy2api_([0-9][0-9A-Za-z.+~:-]*)-([0-9][0-9A-Za-z.+~]*)_(.+?)(-legacy)?$", path.stem)
     if not m:
         fail("文件名不符合 workbuddy2api_<ver>-<rel>_<arch>.ipk：%s" % path.name)
         return
-    ver, rel, arch = m.groups()
-    legacy = arch.endswith("-legacy")
-    if legacy:
-        arch = arch[: -len("-legacy")]
-    if "%s-%s" % (ver, rel) != "1.14.0-1":
+    ver, rel, arch, legacy_suffix = m.groups()
+    legacy = bool(legacy_suffix)
+    if "%s-%s" % (ver, rel) != EXPECT_PKGVER:
         fail("文件名版本 = %s-%s" % (ver, rel))
 
     print("\n== %s  (%s)" % (path.name, arch))
@@ -178,7 +184,7 @@ def check_main(path: Path):
     ctl = parse_control(ctl_members["control"])
     if ctl.get("Package") != "workbuddy2api":
         fail("Package = %r" % ctl.get("Package"))
-    if ctl.get("Version") != "1.14.0-1":
+    if ctl.get("Version") != EXPECT_PKGVER:
         fail("Version = %r" % ctl.get("Version"))
     if ctl.get("Architecture") != arch:
         fail("Architecture = %r，文件名是 %r" % (ctl.get("Architecture"), arch))
@@ -233,8 +239,8 @@ def check_main(path: Path):
                      % (info["machine"], info["data"], info["class"], key, endian, cls))
             else:
                 ok("ELF 架构正确（%s）" % key)
-        if b"1.14.0" not in binblob:
-            fail("二进制里没有 1.14.0 版本串")
+        if EXPECT_VERSION.encode() not in binblob:
+            fail("二进制里没有 %s 版本串" % EXPECT_VERSION)
 
     cj = files.get("etc/workbuddy2api/config.default.json", (0, 0, b""))[2]
     if cj:
