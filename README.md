@@ -73,6 +73,17 @@ bash scripts/build-all.sh              # 本地交叉编译 + 打包（需要 go
 想跟别的 fork：`UPSTREAM_URL=https://github.com/<你>/<fork>.git bash scripts/sync-upstream.sh`，
 或用工作流的环境变量 `UPSTREAM_URL`。
 
+### 本地提交与推送注意
+
+```sh
+# 1) 这台机器直连 GitHub 的 HTTP/2 上传会卡死（14MB 推 12 分钟没动静），加 HTTP/1.1 后 10 秒完成
+git -c http.version=HTTP/1.1 push origin main
+
+# 2) 全局 git 配置把 https://github.com/ 改写成了 api.gitproxy.dev（下载加速用），
+#    push 也会被改写；要直推就用一次性远端 URL，或临时关掉改写
+git -c url."https://github.com/".insteadOf=https://github.com/ push origin main
+```
+
 ### Fork 后自己跑
 
 1. fork 本仓库；
@@ -128,12 +139,17 @@ LuCI 包同理（`luci-app-workbuddy2api_1.14.0-1_all.ipk` / `..._all-legacy.ipk
 ## 2. 安装
 
 ```sh
-# 1) 上传到 /tmp（scp / WinSCP / LuCI 上传均可）
+# 1) 从 Releases 下对应架构的两个文件，上传到 /tmp（scp / WinSCP / LuCI 上传均可）
+#    文件名里的版本可能是 1.14.0+git20261120.be99749-1 这种形式，照抄即可
 # 2) 主程序（换成你设备的架构与格式）
-opkg install /tmp/workbuddy2api_1.14.0-1_aarch64_cortex-a53.ipk
+opkg install /tmp/workbuddy2api_1.14.0+git20261120.be99749-1_aarch64_cortex-a53.ipk
 
 # 3) LuCI 界面（23.05+ 才需要）
-opkg install /tmp/luci-app-workbuddy2api_1.14.0-1_all.ipk
+opkg install /tmp/luci-app-workbuddy2api_1.14.0+git20261120.be99749-1_all.ipk
+
+# 4) 装完自检
+opkg list-installed | grep workbuddy2api
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:7863/healthz    # 期望 200
 ```
 
 安装脚本会自动：创建 `/etc/workbuddy2api/`、从出厂模板生成带随机 `api_key` 的 `config.json`、
@@ -161,7 +177,9 @@ opkg 安装并打印验证结果；`--arch x86_64` 可强指定。
 
 ```sh
 # 升级：直接把新 ipk 丢上去覆盖（conffiles 里的 UCI 与出厂模板会保留）
-opkg install /tmp/workbuddy2api_1.14.0-1_aarch64_cortex-a53.ipk
+opkg install /tmp/workbuddy2api_<新版本>_<你的架构>.ipk
+# 跨版本号形式（如 1.14.0 -> 1.14.0+git20261120.be99749-1）opkg 认作更新，可直接覆盖
+# 想强制重装同一个版本：opkg install --force-reinstall <包>
 # 配置文件不会被覆盖；旧 config.json 缺的新字段由程序按其默认值补齐
 ```
 

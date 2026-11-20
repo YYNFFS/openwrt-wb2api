@@ -61,7 +61,18 @@ if [ "$SKIP_PACK" = "1" ]; then
 fi
 
 # 两种容器都出：tgz = OpenWrt 24.10+，ar = 22.03/23.05（文件名带 -legacy）
-PKG_VERSION="$PKG_VERSION" python3 scripts/build-ipk.py --all --format both --out "$DIST"
+PY="${PYTHON:-}"
+if [ -z "$PY" ]; then
+	for c in python3 python; do
+		if command -v "$c" >/dev/null 2>&1 && "$c" -c 'import sys' >/dev/null 2>&1; then
+			PY="$c"
+			break
+		fi
+	done
+fi
+[ -n "$PY" ] || { echo "no usable python found; set PYTHON=<interpreter>" >&2; exit 1; }
+echo "== 打包用的 python: $PY"
+PKG_VERSION="$PKG_VERSION" "$PY" scripts/build-ipk.py --all --format both --out "$DIST"
 
 echo
 echo "== dist"
