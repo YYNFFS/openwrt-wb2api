@@ -48,12 +48,26 @@ echo "   摘要 = $SUBJ"
 echo "== 同步源码 -> $SRC"
 mkdir -p "$SRC"
 # 排除 git 元数据与 GitHub 模板：包内只需要能编译的东西
-rsync -a --delete \
-	--exclude '.git/' \
-	--exclude '.github/' \
-	--exclude '.gitattributes' \
-	--exclude '.gitignore' \
-	"$TMP/up/" "$SRC/"
+if command -v rsync >/dev/null 2>&1; then
+	rsync -a --delete \
+		--exclude '.git/' \
+		--exclude '.github/' \
+		--exclude '.gitattributes' \
+		--exclude '.gitignore' \
+		"$TMP/up/" "$SRC/"
+else
+	# 没装 rsync（比如纯净 Windows）：清空后整份复制，vendor 反正要重建
+	echo "   (没有 rsync，改用 tar 复制)"
+	find "$SRC" -mindepth 1 -delete 2>/dev/null || true
+	mkdir -p "$SRC"
+	( cd "$TMP/up" && tar -cf - --exclude .git --exclude .github --exclude .gitattributes --exclude .gitignore . ) \
+		| ( cd "$SRC" && tar -xf - )
+fi
+
+echo "== 清掉上游的 .gitignore"
+# 上游仓库有 `*.md` 这类忽略规则，internal/prompt/defaultprompt.md 被 go:embed 依赖，
+# 留着这些规则会导致同步后提交漏文件（CI 里表现为 pattern ...: no matching files found）。
+find "$SRC" -name '.gitignore' -type f -delete 2>/dev/null || true
 
 echo "== go mod vendor"
 (
