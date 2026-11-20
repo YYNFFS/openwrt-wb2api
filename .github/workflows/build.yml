@@ -1,0 +1,161 @@
+#
+# 编译 + 打包 + 发布 ipk
+#
+# 触发：
+#   - push 到 main 且改动了 package/ 或 scripts/（sync-upstream 自动提交后会连带触发）
+#   - 手动 workflow_dispatch
+#   - 每周一 05:00 UTC 重建一次，防止 Release 资产丢失或过期
+#
+# 产出：7 个静态二进制 → 15 个 OpenWrt 架构 × 2 种容器格式（tgz / ar-legacy）
+#       + LuCI 界面包 = 32 个 ipk，全部作为 Release 资产发布。
+#
+name: build-ipk
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'package/**'
+      - 'scripts/**'
+      - '.upstream-version'
+      - '.github/workflows/build.yml'
+  workflow_dispatch:
+  schedule:
+    - cron: '0 5 * * 1'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-ipk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: 交叉编译与打包
+    runs-on: ubuntu-latest
+    steps:
+      - name: 取仓库
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 装 Go（版本按上游 go.mod）
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: package/workbuddy2api/src/go.mod
+          cache: false
+
+      - name: 装 python3
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: 读版本
+        id: ver
+        run: |
+          set -e
+          VERSION=$(cat .upstream-version 2>/dev/null || sed -n 's/^PKG_VERSION:=\([0-9][0-9.]*\).*/\1/p' package/workbuddy2api/Makefile | head -1)
+          [ -n "$VERSION" ] || VERSION=0.0.0
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+          echo "版本 $VERSION"
+          go version
+
+      - name: 交叉编译 + 打 ipk
+        env:
+          PKG_VERSION: ${{ steps.ver.outputs.version }}
+        run: bash scripts/build-all.sh
+
+      - name: 校验 ipk
+        run: |
+          set -e
+          ls dist/
+          python3 scripts/verify-ipk.py dist/*.ipk
+
+      - name: 生成 SHA256SUMS
+        run: |
+          set -e
+          cd dist
+          sha256sum *.ipk > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: ipk-${{ steps.ver.outputs.version }}
+          path: |
+            dist/*.ipk
+            dist/SHA256SUMS.txt
+            prebuilt/wb2api-linux-*
+          retention-days: 30
+
+      - name: 写发布说明
+        run: |
+          set -e
+          {
+            echo "包版本：\`${{ steps.ver.outputs.version }}\`"
+            echo
+            echo "- 上游仓库：https://github.com/misakano7545/workbuddy2api-panel"
+            echo "- 上游提交：\`$(cat .upstream-commit)\`（$(cat .upstream-date)）"
+            echo "- 上游摘要：$(cat .upstream-subject)"
+            echo
+            echo "## 安装"
+            echo
+            echo '```sh'
+            echo "# OpenWrt 24.10+，架构按 uname -m / cat /etc/openwrt_release 的 DISTRIB_ARCH 选"
+            echo "opkg install workbuddy2api_${{ steps.ver.outputs.version }}_aarch64_cortex-a53.ipk"
+            echo "opkg install luci-app-workbuddy2api_${{ steps.ver.outputs.version }}_all.ipk"
+            echo '```'
+            echo
+            echo "- 22.03 / 23.05 请装文件名带 \`-legacy\` 的 ar 容器版本"
+            echo "- 出厂监听 \`0.0.0.0:7863\`，面板 \`http://<路由器IP>:7863/panel/\`"
+            echo "- API Key 首次启动自动生成：\`grep api_key /etc/workbuddy2api/config.json\`"
+            echo
+            echo "## 资产"
+            echo
+            echo "| 文件 | 架构 | 容器 |"
+            echo "| --- | --- | --- |"
+            for f in dist/*.ipk; do
+              b=$(basename "$f")
+              case "$b" in
+                *-legacy.ipk) c="ar (legacy)" ;;
+                *) c="tar.gz" ;;
+              esac
+              a=$(echo "$b" | sed -E 's/^[a-z0-9-]+_[^_]+_([a-z0-9_.-]+?)(-legacy)?\.ipk$/\1/')
+              echo "| \`$b\` | $a | $c |"
+            done
+          } > RELEASE_NOTES.md
+          cat RELEASE_NOTES.md
+
+      - name: 发布 Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          TAG="${{ steps.ver.outputs.tag }}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/*.ipk dist/SHA256SUMS.txt --clobber
+            gh release edit "$TAG" --notes-file RELEASE_NOTES.md
+            echo "已更新已有 Release $TAG"
+          else
+            gh release create "$TAG" dist/*.ipk dist/SHA256SUMS.txt \
+              --title "workbuddy2api ${{ steps.ver.outputs.version }}" \
+              --notes-file RELEASE_NOTES.md \
+              --target main \
+              --latest
+            echo "已创建 Release $TAG"
+          fi
+
+      - name: 汇总
+        run: |
+          {
+            echo "### 构建结果"
+            echo ""
+            echo "| 项 | 值 |"
+            echo "| --- | --- |"
+            echo "| 版本 | \`${{ steps.ver.outputs.version }}\` |"
+            echo "| 包数 | $(ls dist/*.ipk | wc -l) |"
+            echo "| dist 体积 | $(du -sh dist | cut -f1) |"
+            echo "| Release | \`${{ steps.ver.outputs.tag }}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"

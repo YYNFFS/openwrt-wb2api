@@ -1,0 +1,132 @@
+#
+# 自动跟随上游 workbuddy2api-panel 更新
+#
+# 触发：
+#   - 每 6 小时自动检查一次（cron）
+#   - 手动 workflow_dispatch（可勾 force 强制重建）
+#
+# 流程：比对上游 HEAD 与本仓库 .upstream-commit → 有变化就同步源码 / 重新 vendor /
+#       重生成出配置 / 版本号 = 基础版本+git<日期>.<sha7> → 提交并 push。
+#       push 会连带触发 build-ipk.yml，自动编译并发布 Release（32 个 ipk + SHA256SUMS）。
+#
+name: sync-upstream
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 上游无变化也强制走一遍同步
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+env:
+  UPSTREAM_URL: https://github.com/misakano7545/workbuddy2api-panel.git
+
+jobs:
+  sync:
+    name: 同步上游
+    runs-on: ubuntu-latest
+    steps:
+      - name: 取仓库
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 装 Go（版本按上游 go.mod）
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: package/workbuddy2api/src/go.mod
+          cache: false
+
+      - name: 装 python3
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: 查上游 HEAD
+        id: head
+        run: |
+          set -e
+          SHA=$(git ls-remote "$UPSTREAM_URL" HEAD | cut -f1)
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "上游 HEAD $SHA"
+
+      - name: 判断是否需要同步
+        id: decide
+        run: |
+          set -e
+          OLD=$(cat .upstream-commit 2>/dev/null || echo none)
+          echo "本地已同步 $OLD"
+          if [ "$OLD" = "${{ steps.head.outputs.sha }}" ] && [ "${{ inputs.force }}" != "true" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "上游没有新提交，跳过"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 同步源码并重算版本
+        if: steps.decide.outputs.changed == 'true'
+        run: bash scripts/sync-upstream.sh
+
+      - name: 校验生成物
+        if: steps.decide.outputs.changed == 'true'
+        run: |
+          set -e
+          python3 - <<'PY'
+          import json, pathlib
+          p = pathlib.Path("package/workbuddy2api/files/config.default.json")
+          cfg = json.loads(p.read_text(encoding="utf-8"))
+          assert cfg["listen"] == "0.0.0.0:7863", cfg.get("listen")
+          assert cfg["auth_dir"] == "/etc/workbuddy2api/auths", cfg.get("auth_dir")
+          assert cfg["logging"]["request_archive_enabled"] is False
+          assert cfg["update"]["auto_enabled"] is False
+          bad = [k for k in cfg if k.startswith("_")]
+          assert not bad, bad
+          print("config.default.json 段数 %d，OK" % len(cfg))
+          PY
+          test -f package/workbuddy2api/src/go.mod
+          test -d package/workbuddy2api/src/vendor
+          test -f .upstream-version
+          cat .upstream-commit .upstream-date .upstream-version
+
+      - name: 提交并推送
+        if: steps.decide.outputs.changed == 'true'
+        run: |
+          set -e
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "内容没有差异，不提交"
+            exit 0
+          fi
+          SHORT=$(cut -c1-7 .upstream-commit)
+          DATE=$(cat .upstream-date)
+          SUBJ=$(cat .upstream-subject)
+          VER=$(cat .upstream-version)
+          git add -A
+          git commit -m "chore(sync): 跟随上游 ${SHORT}（${DATE}）${SUBJ}" -m "包版本 ${VER}"
+          git push origin HEAD:main
+          echo "已推送 ${VER}"
+
+      - name: 汇总
+        run: |
+          {
+            echo "### 上游同步结果"
+            echo ""
+            echo "| 项 | 值 |"
+            echo "| --- | --- |"
+            echo "| 上游 HEAD | \`${{ steps.head.outputs.sha }}\` |"
+            echo "| 已同步 | \`$(cat .upstream-commit 2>/dev/null || echo -)\` |"
+            echo "| 包版本 | \`$(cat .upstream-version 2>/dev/null || echo -)\` |"
+            echo "| 上游提交时间 | $(cat .upstream-date 2>/dev/null || echo -) |"
+            echo "| 是否变更 | ${{ steps.decide.outputs.changed }} |"
+          } >> "$GITHUB_STEP_SUMMARY"

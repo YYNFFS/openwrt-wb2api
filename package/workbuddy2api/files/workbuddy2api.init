@@ -1,0 +1,96 @@
+#!/bin/sh /etc/rc.common
+# WorkBuddy2API (wb2api) —— OpenAI 兼容网关 + Web 管理面板
+# procd 服务脚本。所有可变数据都落在 /etc/workbuddy2api，升级/重启不丢。
+
+START=96
+STOP=10
+USE_PROCD=1
+
+PROG=/usr/bin/wb2api
+CONF_DIR=/etc/workbuddy2api
+CONF="$CONF_DIR/config.json"
+DEFAULT_CONF="$CONF_DIR/config.default.json"
+
+gen_api_key() {
+	# 32 位十六进制，等价 128 bit 熵；busybox 的 md5sum 一定存在
+	( cat /proc/sys/kernel/random/uuid 2>/dev/null; date +%s%N 2>/dev/null; echo "$$" ) \
+		| md5sum | cut -c1-32
+}
+
+ensure_dirs() {
+	mkdir -p "$CONF_DIR/auths" "$CONF_DIR/data"
+	chmod 700 "$CONF_DIR" 2>/dev/null
+}
+
+# 早期版本用的是 ./auths / ./data/... 相对路径，而部分 procd 版本会忽略
+# cwd 参数，导致凭证与状态落到 "/" 下。这里统一迁移成绝对路径。
+migrate_config() {
+	[ -s "$CONF" ] || return 0
+	grep -q '"\./auths"\|"\./data/' "$CONF" || return 0
+
+	sed -i \
+		-e 's#"auth_dir": *"\./auths"#"auth_dir": "/etc/workbuddy2api/auths"#' \
+		-e 's#"state_file": *"\./data/state.json"#"state_file": "/etc/workbuddy2api/data/state.json"#' \
+		"$CONF"
+	chmod 600 "$CONF" 2>/dev/null
+	logger -t workbuddy2api "config.json 的相对路径已迁移为 /etc/workbuddy2api 下的绝对路径"
+}
+
+ensure_config() {
+	ensure_dirs
+	[ -s "$CONF" ] && return 0
+	[ -s "$DEFAULT_CONF" ] || return 0
+
+	cp "$DEFAULT_CONF" "$CONF"
+
+	local key
+	key="$(gen_api_key)"
+	[ -n "$key" ] && sed -i "s/\"api_key\": *\"test_key\"/\"api_key\": \"$key\"/" "$CONF"
+	chmod 600 "$CONF"
+	logger -t workbuddy2api "已生成默认配置 $CONF（api_key 见文件内 api_key 字段）"
+}
+
+start_service() {
+	config_load workbuddy2api
+
+	local enabled respawn zone extra
+	config_get_bool enabled main enabled 1
+	[ "$enabled" = "1" ] || return 0
+
+	config_get_bool respawn main respawn 1
+	config_get zone main zonename 'Asia/Shanghai'
+	config_get extra main extra_args ''
+
+	ensure_config
+	migrate_config
+
+	procd_open_instance
+	procd_set_param command "$PROG" -config "$CONF" $extra
+	procd_set_param cwd "$CONF_DIR"
+
+	# Go 的 time.Local 只认 IANA 时区文件，不解析 POSIX 的 "CST-8"。
+	# 包内自带 TZif，用绝对路径最省事（Go 支持 TZ=/abs/path 直接读文件）。
+	if [ -f "$CONF_DIR/zoneinfo/$zone" ]; then
+		procd_set_param env TZ="$CONF_DIR/zoneinfo/$zone"
+	elif [ -f "/usr/share/zoneinfo/$zone" ]; then
+		procd_set_param env TZ="$zone"
+	fi
+
+	procd_set_param stdout 1
+	procd_set_param stderr 1
+	if [ "$respawn" = "1" ]; then
+		# <阈值秒> <重启间隔秒> <窗口内最大重启次数，0=不限>
+		procd_set_param respawn 3600 5 0
+	fi
+	procd_set_param limits nofile="4096 4096"
+	procd_close_instance
+}
+
+service_triggers() {
+	procd_add_reload_trigger workbuddy2api
+}
+
+reload_service() {
+	stop
+	start
+}

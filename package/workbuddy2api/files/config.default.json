@@ -1,0 +1,188 @@
+{
+  "listen": "0.0.0.0:7863",
+  "api_key": "test_key",
+  "auth_dir": "/etc/workbuddy2api/auths",
+  "state_file": "/etc/workbuddy2api/data/state.json",
+  "dns_servers": [],
+  "server": {
+    "read_timeout": "300s",
+    "shutdown_timeout": "30s",
+    "max_payload_bytes": 67108864
+  },
+  "panel": {
+    "package_detail_limit": 5,
+    "poll_interval_sec": 0
+  },
+  "update": {
+    "auto_enabled": false,
+    "auto_time": "04:00",
+    "proxy": "",
+    "proxy_from_env": true,
+    "mirror": ""
+  },
+  "accounts": {
+    "reload_interval": "10s",
+    "reload_delete_confirm": 2
+  },
+  "logging": {
+    "request_archive_enabled": false,
+    "request_retention_days": 3,
+    "request_archive_max_mb": 16,
+    "request_client_info": true,
+    "request_archive_context": false,
+    "panel_log_enabled": true,
+    "panel_log_retention_days": 3,
+    "panel_log_max_mb": 8
+  },
+  "cooldown": {
+    "soft_rate": "600s",
+    "soft_rate_max": "2h"
+  },
+  "schedule": {
+    "checkin_hours": [
+      9,
+      21
+    ],
+    "travel_hours": [
+      9,
+      21
+    ],
+    "activity_hours": [
+      10
+    ],
+    "web_activity_enabled": false,
+    "keepalive_hours": [
+      22
+    ],
+    "keepalive_refresh_window": "168h",
+    "growth_hours": [
+      11
+    ],
+    "checkin_enabled": true,
+    "travel_enabled": true,
+    "activity_enabled": true,
+    "keepalive_enabled": true,
+    "growth_enabled": true,
+    "growth_concurrency": 1,
+    "jitter_minutes": 0,
+    "account_spread_minutes": 0,
+    "account_spread_min_gap_seconds": 0,
+    "balance_refresh_enabled": true,
+    "balance_refresh_minutes": 5,
+    "include_disabled_in_tasks": false,
+    "balance_refresh_jitter_permill": 0,
+    "task_sweep_jitter_permill": 0,
+    "makeup_cards_per_round": 0,
+    "window_probe_enabled": true
+  },
+  "global": {
+    "enabled": true,
+    "chat_base": "",
+    "billing_base": ""
+  },
+  "cn": {
+    "chat_base": ""
+  },
+  "upstream": {
+    "timeout_seconds": 120,
+    "tls_fingerprint": "node",
+    "header_timeout_seconds": 120,
+    "idle_timeout_seconds": 300,
+    "user_agent": "",
+    "client_version": "",
+    "cli_version": "",
+    "client_name": "",
+    "device_token": "",
+    "device_token_file": "",
+    "passthrough_ip": false,
+    "dump_dir": "",
+    "dump_max_bytes": 0,
+    "restriction_hold_seconds": 1800
+  },
+  "features": {
+    "sanitize_blacklist_fingerprints": true,
+    "sanitize_brand_scope": "all",
+    "login_bind_proxy": true,
+    "proxy_exit_lookup": false,
+    "embeddings_enabled": false,
+    "tts_enabled": false,
+    "asr_enabled": false,
+    "busy_retry": true,
+    "busy_wait_seconds": 60,
+    "narration_enabled": true,
+    "watermark_strip_enabled": false,
+    "three_d_enabled": false,
+    "three_d_temp_tokens": {},
+    "three_d_auto_token": true
+  },
+  "models": {
+    "hidden": [],
+    "allowed": []
+  },
+  "thinking": {
+    "enabled": true,
+    "default_effort": "high",
+    "client_priority": true,
+    "override_scope": "level",
+    "model_defaults": {}
+  },
+  "prompt": {
+    "mode": "passthrough",
+    "file": "",
+    "keep_recent_rounds": 0
+  },
+  "upstash": {
+    "url": "",
+    "token": ""
+  },
+  "pool": {
+    "max_in_flight": 3,
+    "max_in_flight_global": 2,
+    "breaker_threshold": 3,
+    "breaker_cooldown": "30m",
+    "breaker_cooldown_max": "6h",
+    "degrade_threshold": 5,
+    "degrade_cooldown": "10m",
+    "degrade_cooldown_max": "2h",
+    "selection_strategy": "weighted",
+    "idle_weight_per_hour": 0.5,
+    "idle_weight_max": 5.0,
+    "prefer_expiring": true,
+    "expiring_soon": "168h",
+    "account_priority": {},
+    "account_share": {},
+    "cost_explore_interval": "30m",
+    "balance_window": "1h",
+    "credit_floor": 100,
+    "reserve_credits": 10,
+    "model_fallback": {}
+  },
+  "session_sticky": {
+    "enabled": true,
+    "ttl": "30m",
+    "gc_interval": "5m"
+  },
+  "admin": {
+    "enabled": false,
+    "audit_enabled": false,
+    "audit_file": "/etc/workbuddy2api/data/admin_audit.log"
+  },
+  "metrics": {
+    "enabled": false
+  },
+  "budget": {
+    "daily_credit_limit": 0,
+    "burst_credit_limit": 0,
+    "cache_low_rate": 0
+  },
+  "alerting": {
+    "enabled": false,
+    "webhook_url": "",
+    "min_healthy_cn": 1,
+    "min_healthy_global": 0
+  },
+  "watchdog": {
+    "enabled": false,
+    "interval_seconds": 3600
+  }
+}

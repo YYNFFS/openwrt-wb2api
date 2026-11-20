@@ -1,0 +1,17 @@
+# 构建产物（CI 产出，不进仓库）
+/dist/
+/prebuilt/
+
+# 本地临时文件
+/tmp/
+*.exe
+*.ipk
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# 编辑器
+.vscode/
+.idea/

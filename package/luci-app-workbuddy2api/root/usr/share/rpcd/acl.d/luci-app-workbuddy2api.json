@@ -1,0 +1,30 @@
+{
+	"luci-app-workbuddy2api": {
+		"description": "Grant access to WorkBuddy2API service and configuration",
+		"read": {
+			"file": {
+				"/etc/workbuddy2api/config.json": [ "read" ],
+				"/etc/workbuddy2api/config.default.json": [ "read" ],
+				"/etc/workbuddy2api/auths": [ "list" ],
+				"/etc/workbuddy2api/data": [ "list" ]
+			},
+			"ubus": {
+				"service": [ "list" ]
+			},
+			"uci": [ "workbuddy2api" ]
+		},
+		"write": {
+			"file": {
+				"/etc/workbuddy2api/config.json": [ "write" ],
+				"/etc/workbuddy2api/auths": [ "write" ],
+				"/etc/init.d/workbuddy2api": [ "exec" ],
+				"/sbin/logread": [ "exec" ],
+				"/bin/logread": [ "exec" ]
+			},
+			"ubus": {
+				"service": [ "restart", "start", "stop", "enable", "disable" ]
+			},
+			"uci": [ "workbuddy2api" ]
+		}
+	}
+}

@@ -1,0 +1,10 @@
+* text=auto eol=lf
+
+*.ipk binary
+*.exe binary
+*.png binary
+*.jpg binary
+*.gz binary
+
+# 上游源码原样保留
+package/workbuddy2api/src/** -text

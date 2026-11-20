@@ -1,0 +1,25 @@
+#!/bin/sh
+# 首次安装时放行 Web 端口（仅 LAN 区域，tcp）。幂等：重复执行不会加第二条。
+[ -n "$IPKG_INSTROOT" ] && exit 0
+
+. /lib/functions.sh
+
+PORT="$(sed -n 's/^[[:space:]]*"listen":[[:space:]]*".*:\([0-9]\{1,5\}\)".*/\1/p' \
+	/etc/workbuddy2api/config.json 2>/dev/null | head -n1)"
+[ -n "$PORT" ] || PORT=7863
+
+uci -q get firewall.wb2api_port >/dev/null 2>&1 && exit 0
+
+uci batch >/dev/null 2>&1 <<EOF
+set firewall.wb2api_port=rule
+set firewall.wb2api_port.name='Allow-WorkBuddy2API'
+set firewall.wb2api_port.src='lan'
+set firewall.wb2api_port.proto='tcp'
+set firewall.wb2api_port.dest_port='$PORT'
+set firewall.wb2api_port.target='ACCEPT'
+EOF
+
+uci commit firewall
+/etc/init.d/firewall reload >/dev/null 2>&1
+
+exit 0
