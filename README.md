@@ -34,7 +34,12 @@ Releases 里的资产就是 `dist/` 下那 32 个包 + `SHA256SUMS.txt`，直接
 | `.github/workflows/sync-upstream.yml` | 每 6 小时 cron、手动 | 比对上游 HEAD 与 `.upstream-commit`；有变化就 rsync 源码 → `go mod vendor` → 重生成 `config.default.json` → 重算版本号 → 提交并 push |
 | `.github/workflows/build.yml` | push 到 main（改 `package/`、`scripts/`）、手动、每周一 | 交叉编译 7 个架构二进制 → 打 15 架构 × 2 容器的 ipk → `verify-ipk.py` 校验 → 发布 Release |
 
-同步工作流跑完会连带触发构建工作流，所以整条链路是：**上游提交 → 自动同步 → 自动编译 → 自动发布**。
+同步工作流用内置 `GITHUB_TOKEN` 提交，而 GitHub 规定这类提交产生的 push 事件不会启动其它工作流，
+所以工作流在推送成功后显式 `gh workflow run build.yml` 派发一次构建（需要 `actions: write` 权限，已写在 yml 里）。
+整条链路是：**上游提交 → 自动同步 → 自动编译 → 自动发布**。
+
+只想重建一次包（比如 Release 资产被删了）：Actions → `sync-upstream` → Run workflow → 勾 `rebuild`，
+它会跳过同步直接派发 `build.yml`；或直接跑 `build-ipk` 工作流。
 
 ### 版本号规则
 

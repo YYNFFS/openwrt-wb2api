@@ -20,9 +20,16 @@ on:
         description: 上游无变化也强制走一遍同步
         type: boolean
         default: false
+      rebuild:
+        description: 不同步，只触发一次构建（重建 Release）
+        type: boolean
+        default: false
 
+# actions: write 用于 workflow_dispatch 触发 build.yml —— GitHub 规定用内置 GITHUB_TOKEN
+# 提交产生的 push 事件不会启动其它工作流，必须显式 dispatch。
 permissions:
   contents: write
+  actions: write
 
 concurrency:
   group: sync-upstream
@@ -99,6 +106,7 @@ jobs:
           cat .upstream-commit .upstream-date .upstream-version
 
       - name: 提交并推送
+        id: commit
         if: steps.decide.outputs.changed == 'true'
         run: |
           set -e
@@ -106,6 +114,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           if [ -z "$(git status --porcelain)" ]; then
             echo "内容没有差异，不提交"
+            echo "pushed=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           SHORT=$(cut -c1-7 .upstream-commit)
@@ -115,7 +124,19 @@ jobs:
           git add -A
           git commit -m "chore(sync): 跟随上游 ${SHORT}（${DATE}）${SUBJ}" -m "包版本 ${VER}"
           git push origin HEAD:main
+          echo "pushed=true" >> "$GITHUB_OUTPUT"
           echo "已推送 ${VER}"
+
+      - name: 触发构建工作流
+        if: steps.commit.outputs.pushed == 'true' || inputs.rebuild == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VER: ${{ steps.decide.outputs.changed }}
+        run: |
+          set -e
+          # 内置 token 的 push 不会触发其它工作流，这里显式派发
+          gh workflow run build.yml --repo "${{ github.repository }}" --ref main
+          echo "已派发 build.yml（触发方式：${VER:-rebuild}）"
 
       - name: 汇总
         run: |
