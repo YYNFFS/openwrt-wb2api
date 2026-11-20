@@ -128,7 +128,9 @@ jobs:
           echo "已推送 ${VER}"
 
       - name: 触发构建工作流
-        if: steps.commit.outputs.pushed == 'true' || inputs.rebuild == 'true'
+        # 注意：workflow_dispatch 的布尔输入在 inputs 上下文里是 boolean，
+        # 与字符串 'true' 比较会走数字强制转换而恒为 false，故读 github.event.inputs（字符串）。
+        if: steps.commit.outputs.pushed == 'true' || github.event.inputs.rebuild == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           VER: ${{ steps.decide.outputs.changed }}
