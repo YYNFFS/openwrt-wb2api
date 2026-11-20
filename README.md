@@ -173,7 +173,40 @@ python3 scripts/deploy.py --password <root密码> --skip-luci   # 只更新主�
 脚本会读设备 `/etc/openwrt_release` 的 `DISTRIB_ARCH`、自动挑对应 ipk、SFTP 上传、
 opkg 安装并打印验证结果；`--arch x86_64` 可强指定。
 
-### 升级 / 回滚
+### 更新到最新版
+
+**方式 A：路由器上一行命令（不用电脑，自带 arch/容器判断 + SHA256 校验）**
+
+```sh
+# 下载脚本（只需一次；也可 curl 到本地后再传）
+curl -fsSL -o /tmp/upgrade-latest.sh \
+  https://raw.githubusercontent.com/YYNFFS/openwrt-wb2api/main/scripts/upgrade-latest.sh
+
+sh /tmp/upgrade-latest.sh --check   # 只看有没有新版
+sh /tmp/upgrade-latest.sh          # 检查并升级到最新 Release
+sh /tmp/upgrade-latest.sh --force  # 版本相同也重装
+```
+
+脚本做的事：读 `/etc/openwrt_release` 拿 `DISTRIB_ARCH` 和系统版本（24.10 以下自动加 `-legacy`）→
+从 `releases/latest` 的 302 跳转取最新 tag（不吃 API 限额）→ 下载两个 ipk 与 `SHA256SUMS.txt` →
+`sha256sum` 校验 → `opkg install` → 重启服务并检查 `healthz`/`panel`。
+换仓库或换镜像：`REPO=owner/repo ASSET_HOST=https://github.com sh /tmp/upgrade-latest.sh`。
+
+**方式 B：电脑上一行命令（自动下载最新 Release 再 SSH 推上去）**
+
+```sh
+pip install paramiko
+python3 scripts/deploy.py --password <root密码> --latest          # 已是最新就跳过
+python3 scripts/deploy.py --password <root密码> --latest --force  # 强制重装
+python3 scripts/deploy.py --password <root密码>                   # 装本地 dist/ 里的包
+```
+
+**方式 C：什么都不做，等 CI**
+
+`sync-upstream` 每 6 小时比对上游 HEAD，上游有新提交就自动同步、重编、发新 Release（版本号
+`<基础版本>+git<日期>.<sha7>`）。想立刻拉一次：仓库 Actions → `sync-upstream` → Run workflow。
+
+**手动升级 / 回滚**
 
 ```sh
 # 升级：直接把新 ipk 丢上去覆盖（conffiles 里的 UCI 与出厂模板会保留）
