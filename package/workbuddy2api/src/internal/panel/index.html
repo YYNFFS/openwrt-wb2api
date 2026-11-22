@@ -1578,7 +1578,7 @@ legend { font-size: 12px; color: var(--ink-3); font-weight: 600; padding-bottom:
               <div>
                 <label class="switch"><span class="lb">自动更新</span>
                   <input type="checkbox" name="update_auto_enabled"></label>
-                <span class="hint">每天按上海时间检查并安装新的时间标签版 Release；容器部署请更新镜像。</span>
+                <span class="hint">每天按上海时间检查并安装新的 Release；OpenWrt 上一键更新走 opkg（下载 ipk 后覆盖安装并重启服务），容器部署请更新镜像。</span>
               </div>
               <label class="fld"><span class="lb">自动更新时间（上海）</span>
                 <input name="update_auto_time" type="time" step="60" value="04:00">

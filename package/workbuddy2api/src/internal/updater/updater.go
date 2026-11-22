@@ -160,7 +160,7 @@ func New(version, repository, configPath string, settings Settings) *Manager {
 		executable = resolved
 	}
 	if repository == "" {
-		repository = "misakano7545/workbuddy2api-panel"
+		repository = "YYNFFS/openwrt-wb2api"
 	}
 	if settings.AutoTime == "" {
 		settings.AutoTime = "04:00"
@@ -441,6 +441,10 @@ func (m *Manager) Install(ctx context.Context) (err error) {
 	version, ok := parseVersion(r.TagName)
 	if !ok {
 		return errors.New("Release 版本格式不受支持")
+	}
+	// OpenWrt：Release 里是 ipk，交给 opkg 安装（见 openwrt.go）。
+	if env, isOpenWrt := openwrtInfo(); isOpenWrt {
+	return m.installOpenWrt(ctx, r, version, env)
 	}
 	assetName := fmt.Sprintf("wb2api-panel-%s-%s-%s.zip", version.text, runtime.GOOS, runtime.GOARCH)
 	var asset *releaseAsset
@@ -1136,14 +1140,22 @@ func (m *Manager) scheduleDue(now time.Time) (auto, regular bool) {
 }
 
 func (m *Manager) canInstallLocked() bool {
-	_, versioned := parseVersion(m.version)
-	return versioned &&
-		(runtime.GOOS == "linux" || runtime.GOOS == "windows") &&
-		(runtime.GOARCH == "amd64" || runtime.GOARCH == "arm64") &&
-		m.executable != "" && !isContainer() && !processSupervised()
+	if _, versioned := parseVersion(m.version); !versioned || m.executable == "" {
+		return false
+	}
+	if isContainer() || processSupervised() {
+		return false
+	}
+	// OpenWrt：本仓库 Release 发的是 ipk，安装由 opkg 完成，不受
+	// 「只有 linux/windows 的 amd64/arm64 能原地替换 zip」这条限制约束。
+	if _, ok := openwrtInfo(); ok {
+		return runtime.GOOS == "linux"
+	}
+	return (runtime.GOOS == "linux" || runtime.GOOS == "windows") &&
+		(runtime.GOARCH == "amd64" || runtime.GOARCH == "arm64")
 }
 
-func parseVersion(tag string) (parsedVersion, bool) {
+func parseStampVersion(tag string) (parsedVersion, bool) {
 	text := strings.TrimPrefix(tag, "v")
 	parts := strings.Split(text, ".")
 	if len(parts) != 4 || len(parts[3]) < 3 || len(parts[3]) > 4 {

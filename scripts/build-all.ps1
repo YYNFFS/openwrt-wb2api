@@ -3,13 +3,15 @@
 
   用法：
     powershell -ExecutionPolicy Bypass -File scripts\build-all.ps1
-    powershell -ExecutionPolicy Bypass -File scripts\build-all.ps1 -Version 1.14.0 -GoRoot D:\go
+    powershell -ExecutionPolicy Bypass -File scripts\build-all.ps1 -Version 1.15.0+git20261122.24e59f8 -GoRoot D:\go
     powershell -ExecutionPolicy Bypass -File scripts\build-all.ps1 -SkipPack   # 只编二进制
+
+  版本号来源：-Version > 仓库根 .upstream-version > 主 Makefile 的 PKG_VERSION。
 #>
 param(
 	[string]$GoRoot = $env:GOROOT,
 	[string]$Python = "python",
-	[string]$Version = "1.14.0",
+	[string]$Version = "",
 	[switch]$SkipPack
 )
 
@@ -19,6 +21,20 @@ $Root = Split-Path -Parent $PSScriptRoot
 $Src  = Join-Path $Root 'package\workbuddy2api\src'
 $Out  = Join-Path $Root 'prebuilt'
 $Dist = Join-Path $Root 'dist'
+
+if (-not $Version) {
+	$stampFile = Join-Path $Root '.upstream-version'
+	if (Test-Path $stampFile) {
+		$Version = (Get-Content $stampFile -Raw -Encoding UTF8).Trim()
+	}
+}
+if (-not $Version) {
+	$mk = Get-Content (Join-Path $Root 'package\workbuddy2api\Makefile') -Encoding UTF8 |
+		Where-Object { $_ -match '^PKG_VERSION:=' } | Select-Object -First 1
+	$Version = ($mk -split ':=', 2)[1].Trim()
+}
+if (-not $Version) { throw "拿不到版本号，用 -Version 指定" }
+Write-Host "== 版本 $Version"
 
 if (-not $GoRoot -or -not (Test-Path (Join-Path $GoRoot 'bin\go.exe'))) {
 	$cmd = Get-Command go -ErrorAction SilentlyContinue
@@ -34,6 +50,14 @@ $env:GOOS = 'linux'
 $env:GOFLAGS = '-mod=vendor'  # 离线编译
 
 New-Item -ItemType Directory -Force -Path $Out, $Dist | Out-Null
+
+# 打上本仓库对上游源码的改动（幂等）。sync-upstream.sh 用 rsync --delete 覆盖 src，
+# 补丁挂在同步/构建链路上才不会丢；锚点变了脚本非零退出，宁可构建失败也不发没打补丁的包。
+$patcher = Join-Path $Root 'package\workbuddy2api\patches\apply.py'
+if (Test-Path $patcher) {
+	& $Python $patcher
+	if ($LASTEXITCODE -ne 0) { throw "patches/apply.py 失败：上游结构可能变了，先看上面的报告" }
+}
 
 $LdFlags = "-s -w -X main.appVersion=$Version"
 

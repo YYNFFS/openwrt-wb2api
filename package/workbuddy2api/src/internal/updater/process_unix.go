@@ -55,3 +55,25 @@ func waitChildHealthy(cmd *exec.Cmd, window time.Duration) error {
 		time.Sleep(250 * time.Millisecond)
 	}
 }
+
+// launchDetachedShell 用 /bin/sh 跑一个脚本并脱离当前会话（setsid）：
+// 父进程重启 / 被 procd 杀掉都不会把安装过程带走。
+func launchDetachedShell(script string) error {
+	cmd := exec.Command("/bin/sh", script)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	devnull, err := os.OpenFile(os.DevNull, os.O_RDWR, 0)
+	if err != nil {
+		return err
+	}
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = devnull, devnull, devnull
+	setHiddenWindow(cmd)
+	if err := cmd.Start(); err != nil {
+		devnull.Close()
+		return err
+	}
+	go func() {
+		_ = cmd.Wait()
+		devnull.Close()
+	}()
+	return nil
+}

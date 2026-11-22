@@ -8,9 +8,9 @@
 
 二进制 `CGO_ENABLED=0` 静态编译，不依赖 libc 版本，也不需要 python / bash / redis。
 
-> 本版对应上游 **1.14.0**（commit `be99749`，2026-11-20）。
+> 本版对应上游 **1.14.0**（commit `24e59f8`，2026-11-22）。
 > 打包层曾在 **Cudy TR3000 v1（MT7981）+ ImmortalWrt 24.10-SNAPSHOT** 实机安装验证；
-> 1.14.0-1 全部 32 个包已通过 `scripts/verify-ipk.py` 结构校验，二进制在 Windows 上做过同源冒烟
+> 1.15.0-1 全部 32 个包已通过 `scripts/verify-ipk.py` 结构校验，二进制在 Windows 上做过同源冒烟
 > （`/panel/`、`/v1/models`、`/panel/api/overview` 均正常返回）。
 
 ## 0. 仓库、下载与自动跟随上游
@@ -41,6 +41,37 @@ Releases 里的资产就是 `dist/` 下那 32 个包 + `SHA256SUMS.txt`，直接
 只想重建一次包（比如 Release 资产被删了）：Actions → `sync-upstream` → Run workflow → 勾 `rebuild`，
 它会跳过同步直接派发 `build.yml`；或直接跑 `build-ipk` 工作流。
 
+### 面板里的「检查更新」指向本仓库
+
+包内面板（`/panel/` → 配置 → 版本与更新）的**检查更新 / 打开 Release / 测试连通性**默认走
+`YYNFFS/openwrt-wb2api`，也就是这里的 Release，不再是上游仓库：
+
+| 面板按钮 | 实际行为 |
+| --- | --- |
+| 检查更新 | 读 `https://api.github.com/repos/YYNFFS/openwrt-wb2api/releases`，按版本号取最新一个 |
+| 安装（OpenWrt 上一键更新） | 按设备 `DISTRIB_ARCH` + 系统版本挑 ipk（<24.10 自动挑 `-legacy`）→ 下到 `/tmp/wb2api-update/` → 校验 Release 里的 sha256 → `opkg install` → 重启服务 |
+| 打开 Release | 跳到本仓库对应 Release 页面 |
+| 自动更新 | `config.json` 的 `update.auto_enabled` / `auto_time`（默认关，包内出厂模板是 `false`） |
+
+**为什么改成 opkg**：上游原逻辑是「下载 `wb2api-panel-<ver>-<os>-<arch>.zip` → 解出 `wb2api` →
+自己替换自己」，且只允许 linux/windows 的 amd64/arm64。OpenWrt 上 Release 发的是 ipk、架构是
+`aarch64_cortex-a53` 这类名字，原逻辑必然走到「Release 缺少当前平台文件」。现在路由器上走
+`opkg`，连 LuCI 界面包一起升级（检测到 `luci-app-workbuddy2api` 就顺带升）。
+
+### 对上游源码的改动（`patches/`）
+
+`scripts/sync-upstream.sh` 用 `rsync --delete` 覆盖 `package/workbuddy2api/src`，所以对上游代码的
+任何改动都不能直接改 src（下次同步就没了），全部收敛在 `package/workbuddy2api/patches/`：
+
+| 文件 | 内容 |
+| --- | --- |
+| `patches/src/internal/updater/openwrt.go` | OpenWrt 更新路径：认 `/etc/openwrt_release`、挑 ipk 资产名、sha256 校验、写 `/tmp/wb2api-selfupdate.sh` 并 setsid 执行 `opkg install` + 重启 |
+| `patches/src/internal/updater/version.go` | 让 `parseVersion` 认同本仓库的 `1.15.0+git20261122.24e59f8` 形式（上游原实现只认四段时间标签） |
+| `patches/apply.py` | 幂等补丁器：铺上面两个文件，再改 `updater.go`（`parseVersion` 改名、兜底仓库、`canInstallLocked` 放开 OpenWrt、`Install` 分支）、`process_unix.go`/`process_windows.go`（`launchDetachedShell`）、`cmd/server/main.go`（`appRepository`）、`internal/panel/index.html`（更新区文案） |
+
+`sync-upstream.sh` 与 `build-all.sh` 都会调用 `patches/apply.py`；锚点对不上（上游改结构了）时脚本
+非零退出，CI 直接红，不会静默发出没打补丁的包。
+
 ### 版本号规则
 
 上游没有 tag，也没有版本常量（`main.go` 里是 `var appVersion = "dev"`，由 `-ldflags -X` 注入），
@@ -48,11 +79,20 @@ Releases 里的资产就是 `dist/` 下那 32 个包 + `SHA256SUMS.txt`，直接
 
 ```
 <基础版本>+git<上游提交日期 YYYYMMDD>.<上游 commit 前 7 位>
-例：1.14.0+git20261120.be99749
+例：1.15.0+git20261122.24e59f8
 ```
 
 `+` 之后的部分让 opkg 认得出「这是同一基础的更新版本」，升级时能正常覆盖。
 基础版本存在 `package/workbuddy2api/Makefile` 的 `PKG_VERSION`，想手动切到别的系列改这里即可。
+
+当前基础版本是 **1.15.0**（上一轮是 1.14.0）：`1.15.0+git…` 系列带上了「面板更新器走本仓库 + opkg」
+这套改动，版本号必须严格大于已在路由器上跑的 `1.14.0+git20261120.be99749-1`，面板才会给出更新提示、
+opkg 才会认作升级而不是拒绝或降级。
+
+上游 `package/workbuddy2api/src/AGENTS.md` 里写的是他们自己的发版方式（时间标签 `v2026.9.26.711`）；
+本仓库不用那套：这里要跟已发布的 `v1.14.0+git…` 保持单调递增，还要让 opkg 版本比较按
+`<基础版本>+git<日期>.<sha>` 正常排序，两者混用会让老版本看起来更新。`parseVersion` 两种都认，
+但本仓库只打后一种。
 
 记录文件（同步工作流与构建工作流共用）：
 
@@ -110,11 +150,11 @@ OpenWrt **24.10 起把 ipk 容器从 `ar` 改成了 `tar.gz`**，两种格式互
 
 | 系统版本 | 该用哪个文件 |
 |---|---|
-| OpenWrt / ImmortalWrt **24.10 及以上** | `workbuddy2api_1.14.0-1_<arch>.ipk` |
-| OpenWrt **22.03 / 23.05** | `workbuddy2api_1.14.0-1_<arch>-legacy.ipk` |
+| OpenWrt / ImmortalWrt **24.10 及以上** | `workbuddy2api_1.15.0+git<日期>.<sha>-1_<arch>.ipk` |
+| OpenWrt **22.03 / 23.05** | `workbuddy2api_1.15.0+git<日期>.<sha>-1_<arch>-legacy.ipk` |
 
 装错会报 `Malformed package file` 或 `pkg_init_from_file` 错误，换另一个即可。
-LuCI 包同理（`luci-app-workbuddy2api_1.14.0-1_all.ipk` / `..._all-legacy.ipk`）。
+LuCI 包同理（`luci-app-workbuddy2api_1.15.0+git<日期>.<sha>-1_all.ipk` / `..._all-legacy.ipk`）。
 
 ### 架构对照
 
@@ -140,12 +180,12 @@ LuCI 包同理（`luci-app-workbuddy2api_1.14.0-1_all.ipk` / `..._all-legacy.ipk
 
 ```sh
 # 1) 从 Releases 下对应架构的两个文件，上传到 /tmp（scp / WinSCP / LuCI 上传均可）
-#    文件名里的版本可能是 1.14.0+git20261120.be99749-1 这种形式，照抄即可
+#    文件名里的版本可能是 1.15.0+git20261122.24e59f8-1 这种形式，照抄即可
 # 2) 主程序（换成你设备的架构与格式）
-opkg install /tmp/workbuddy2api_1.14.0+git20261120.be99749-1_aarch64_cortex-a53.ipk
+opkg install /tmp/workbuddy2api_1.15.0+git20261122.24e59f8-1_aarch64_cortex-a53.ipk
 
 # 3) LuCI 界面（23.05+ 才需要）
-opkg install /tmp/luci-app-workbuddy2api_1.14.0+git20261120.be99749-1_all.ipk
+opkg install /tmp/luci-app-workbuddy2api_1.15.0+git20261122.24e59f8-1_all.ipk
 
 # 4) 装完自检
 opkg list-installed | grep workbuddy2api
@@ -211,7 +251,7 @@ python3 scripts/deploy.py --password <root密码>                   # 装本地 
 ```sh
 # 升级：直接把新 ipk 丢上去覆盖（conffiles 里的 UCI 与出厂模板会保留）
 opkg install /tmp/workbuddy2api_<新版本>_<你的架构>.ipk
-# 跨版本号形式（如 1.14.0 -> 1.14.0+git20261120.be99749-1）opkg 认作更新，可直接覆盖
+# 跨版本号形式（如 1.14.0 -> 1.15.0+git20261122.24e59f8-1）opkg 认作更新，可直接覆盖
 # 想强制重装同一个版本：opkg install --force-reinstall <包>
 # 配置文件不会被覆盖；旧 config.json 缺的新字段由程序按其默认值补齐
 ```
@@ -257,7 +297,8 @@ api_key  = <api_key>
 | 日志 | `logread` 实时输出，可开关自动刷新 |
 
 时区项写的是 UCI 的 `zonename`（IANA 名，默认 `Asia/Shanghai`）。
-1.14.0-1 修掉了旧版一处失效实现：页面原来写 `timezone`、init 脚本读 `zonename`，改完不生效。
+1.15.0-1 修掉了旧版一处失效实现：页面原来写 `timezone`、init 脚本读 `zonename`，改完不生效；
+同时把面板的「检查更新/安装」改成读本仓库 Release 并走 opkg。
 
 改动保存后立即重启服务生效。
 
@@ -319,7 +360,7 @@ busybox 认 POSIX 的 `CST-8`，但 **Go 只认 tzdata 文件**（`TZ` 为 IANA 
 logread -e wb2api | tail -3     # 日志时间应与 `date` 一致
 ```
 
-### config.json（1.14.0 schema，27 个顶层段）
+### config.json（上游 1.x schema，27 个顶层段）
 
 `accounts` · `admin` · `alerting` · `api_key` · `auth_dir` · `budget` · `cn` · `cooldown` ·
 `dns_servers` · `features` · `global` · `listen` · `logging` · `metrics` · `models` · `panel` ·
@@ -373,13 +414,13 @@ init 脚本要点：`START=96`、`USE_PROCD=1`、`respawn 3600 5 0`、`nofile 40
 ```sh
 ./scripts/build-all.sh                      # Linux / macOS
 powershell -File scripts\build-all.ps1      # Windows（需 Go + Python）
-powershell -File scripts\build-all.ps1 -Version 1.14.0 -SkipPack   # 只编二进制
+powershell -File scripts\build-all.ps1 -SkipPack   # 只编二进制（版本自动取 .upstream-version）
 ```
 
-`build-all.ps1` 参数：`-GoRoot`、`-Python`、`-Version`（默认 1.14.0）、`-SkipPack`。
+`build-all.ps1` 参数：`-GoRoot`、`-Python`、`-Version`（默认读 `.upstream-version`）、`-SkipPack`。
 内部固定 `GOOS=linux`、`CGO_ENABLED=0`、`GOFLAGS=-mod=vendor`、`GOTOOLCHAIN=auto`，
 产出 7 个二进制到 `prebuilt/`：`mipsle`(softfloat) / `mips`(softfloat) / `armv7` / `armv6` /
-`arm64` / `amd64` / `386`，版本串用 `-X main.appVersion=1.14.0` 注入。
+`arm64` / `amd64` / `386`，版本串用 `-X main.appVersion=<版本>` 注入。
 
 单架构打包 + 校验：
 
@@ -394,7 +435,7 @@ python3 scripts/verify-ipk.py dist/*.ipk
 
 `scripts/verify-ipk.py` 逐包校验：容器与 `-legacy` 后缀是否对应、`debian-binary`、control 字段、
 `conffiles`、data 清单与文件权限、ELF 的 class / 端序 / `e_machine` 与架构名是否一致、
-二进制里是否含 `1.14.0`、`config.default.json` 的覆盖项、`postinst`/`prerm` 的 `sh -n` 语法、
+二进制里是否含版本串、`config.default.json` 的覆盖项、`postinst`/`prerm` 的 `sh -n` 语法、
 LuCI 包 6 个文件与 `settings.js` 的 `zonename`。
 （Windows 上跑要在 PATH 里加 `D:\AI\DSH\toolchain\PortableGit\usr\bin`，否则跳过 `sh -n`。）
 
@@ -471,7 +512,8 @@ openwrt-wb2api/
 │   ├── workbuddy2api/             # 主程序包
 │   │   ├── Makefile
 │   │   ├── files/                 # init / UCI 默认值 / 出厂配置 / uci-defaults / zoneinfo
-│   │   └── src/                   # 上游 1.14.0 源码 + vendor（离线编译）
+│   │   ├── patches/               # 对上游源码的改动（同步后自动重打，见第 0 节）
+│   │   └── src/                   # 上游源码 + vendor（离线编译）
 │   └── luci-app-workbuddy2api/    # LuCI 界面包
 │       ├── Makefile
 │       └── root/                  # menu.d / acl.d / 四个视图

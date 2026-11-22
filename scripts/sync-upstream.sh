@@ -30,6 +30,19 @@ LUCI_MK="package/luci-app-workbuddy2api/Makefile"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
+# python 挑选（gen-default-config.py 与 patches/apply.py 都只要标准库）
+PY="${PYTHON:-}"
+if [ -z "$PY" ]; then
+	for c in python3 python; do
+		if command -v "$c" >/dev/null 2>&1 && "$c" -c 'import sys' >/dev/null 2>&1; then
+			PY="$c"
+			break
+		fi
+	done
+fi
+[ -n "$PY" ] || { echo "no usable python found; set PYTHON=<interpreter>" >&2; exit 1; }
+echo "== python: $PY"
+
 echo "== 克隆上游 $UPSTREAM_URL"
 if [ -n "$UPSTREAM_BRANCH" ]; then
 	git clone --quiet --depth 1 --branch "$UPSTREAM_BRANCH" "$UPSTREAM_URL" "$TMP/up"
@@ -69,6 +82,16 @@ echo "== 清掉上游的 .gitignore"
 # 留着这些规则会导致同步后提交漏文件（CI 里表现为 pattern ...: no matching files found）。
 find "$SRC" -name '.gitignore' -type f -delete 2>/dev/null || true
 
+echo "== 打本仓库的改动补丁"
+# src 是 rsync --delete 覆盖过来的，面板更新器与仓库指向的改动都在 patches/ 里，
+# 每次同步后重新打一遍（幂等）。锚点对不上会非零退出，让 CI 直接红。
+if [ -f package/workbuddy2api/patches/apply.py ]; then
+	"$PY" package/workbuddy2api/patches/apply.py
+else
+	echo "!! 找不到 package/workbuddy2api/patches/apply.py" >&2
+	exit 1
+fi
+
 echo "== go mod vendor"
 (
 	cd "$SRC"
@@ -76,7 +99,7 @@ echo "== go mod vendor"
 )
 
 echo "== 重新生成 config.default.json"
-python3 scripts/gen-default-config.py
+"$PY" scripts/gen-default-config.py
 
 echo "== 计算版本号"
 BASE="$(sed -n 's/^PKG_VERSION:=\([0-9][0-9.]*\).*/\1/p' "$MAIN_MK" | head -1)"

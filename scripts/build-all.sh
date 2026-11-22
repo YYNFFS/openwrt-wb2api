@@ -32,6 +32,25 @@ fi
 echo "== 版本 $PKG_VERSION"
 echo "== go $(go version 2>/dev/null || echo '(未找到 go)')"
 
+# python 挑选：build-ipk.py 与 patches/apply.py 都只要标准库
+PY="${PYTHON:-}"
+if [ -z "$PY" ]; then
+	for c in python3 python; do
+		if command -v "$c" >/dev/null 2>&1 && "$c" -c 'import sys' >/dev/null 2>&1; then
+			PY="$c"
+			break
+		fi
+	done
+fi
+[ -n "$PY" ] || { echo "no usable python found; set PYTHON=<interpreter>" >&2; exit 1; }
+echo "== python: $PY"
+
+# 打上本仓库对上游源码的改动（幂等）。sync-upstream.sh 用 rsync --delete 覆盖 src，
+# 补丁挂在同步/构建链路上才不会丢；锚点变了脚本会非零退出，宁可构建失败也不发没打补丁的包。
+if [ -f package/workbuddy2api/patches/apply.py ]; then
+	"$PY" package/workbuddy2api/patches/apply.py
+fi
+
 mkdir -p "$OUT" "$DIST"
 
 build() {
@@ -61,17 +80,6 @@ if [ "$SKIP_PACK" = "1" ]; then
 fi
 
 # 两种容器都出：tgz = OpenWrt 24.10+，ar = 22.03/23.05（文件名带 -legacy）
-PY="${PYTHON:-}"
-if [ -z "$PY" ]; then
-	for c in python3 python; do
-		if command -v "$c" >/dev/null 2>&1 && "$c" -c 'import sys' >/dev/null 2>&1; then
-			PY="$c"
-			break
-		fi
-	done
-fi
-[ -n "$PY" ] || { echo "no usable python found; set PYTHON=<interpreter>" >&2; exit 1; }
-echo "== 打包用的 python: $PY"
 PKG_VERSION="$PKG_VERSION" "$PY" scripts/build-ipk.py --all --format both --out "$DIST"
 
 echo

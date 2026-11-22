@@ -89,3 +89,8 @@ func waitChildHealthy(cmd *exec.Cmd, window time.Duration) error {
 		time.Sleep(250 * time.Millisecond)
 	}
 }
+
+// launchDetachedShell Windows 上没有 opkg 更新路径，保留签名以便跨平台编译。
+func launchDetachedShell(string) error {
+	return errors.New("Windows 上不支持 shell 安装脚本")
+}
