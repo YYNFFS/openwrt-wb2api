@@ -1,1 +1,1 @@
-docs(videos): 参考素材形状与参考图 URL 可达性补真号实测结论
+feat(mcp): generate_video 暴露三个 reference_* 参数
