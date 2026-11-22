@@ -58,6 +58,19 @@ Releases 里的资产就是 `dist/` 下那 32 个包 + `SHA256SUMS.txt`，直接
 `aarch64_cortex-a53` 这类名字，原逻辑必然走到「Release 缺少当前平台文件」。现在路由器上走
 `opkg`，连 LuCI 界面包一起升级（检测到 `luci-app-workbuddy2api` 就顺带升）。
 
+**实测（ImmortalWrt 24.10-SNAPSHOT / aarch64_cortex-a53，`1.15.0+git20261122.24e59f8`）**：
+
+```text
+POST /panel/api/update/check    → current_known=true, latest_version=1.15.0+git…24e59f8,
+                                  can_install=true, release_url=…/YYNFFS/openwrt-wb2api/releases/tag/…
+POST /panel/api/update/install  → 202 {"ok":true,"restarting":true}
+45 秒后                        → opkg 里 workbuddy2api 与 luci-app-workbuddy2api 都换成新版本，
+                                  process: running，healthz=200，panel=200，/tmp/wb2api-selfupdate.sh 自清
+```
+
+`/panel/api/update` 是状态快照（GET），`/check`、`/install`、`/probe` 是 POST，都要带
+`Authorization: Bearer <api_key>`（`grep api_key /etc/workbuddy2api/config.json`）。
+
 ### 对上游源码的改动（`patches/`）
 
 `scripts/sync-upstream.sh` 用 `rsync --delete` 覆盖 `package/workbuddy2api/src`，所以对上游代码的
@@ -240,6 +253,14 @@ python3 scripts/deploy.py --password <root密码> --latest          # 已是最�
 python3 scripts/deploy.py --password <root密码> --latest --force  # 强制重装
 python3 scripts/deploy.py --password <root密码>                   # 装本地 dist/ 里的包
 ```
+
+装的目标版本比设备上已有的老（比如从联调包退回正式包）时，脚本会自动带上
+`opkg install --force-downgrade`，并在 opkg 退出码非零时以 1 退出——以前这种情况 opkg 会
+直接拒绝、包一个字节都没装进去，脚本却照样打印「done」。
+
+**方式 D：直接点面板（最省事）**
+
+面板 → 配置 → 版本与更新 → 检查更新 → 安装，走的就是上面那套 opkg 流程，连 LuCI 包一起升。
 
 **方式 C：什么都不做，等 CI**
 

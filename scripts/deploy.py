@@ -14,6 +14,7 @@ import argparse
 import io
 import json
 import os
+import re
 import sys
 import tempfile
 import time
@@ -27,6 +28,27 @@ ROOT = Path(__file__).resolve().parent.parent
 DIST = ROOT / "dist"
 REPO = os.environ.get("REPO", "YYNFFS/openwrt-wb2api")
 UA = {"User-Agent": "wb2api-deploy/1.0"}
+
+
+def ver_key(v):
+    """把包版本折成可比较的元组：1.15.0+git20261122.24e59f8 -> (1,15,0,20261122,0x24e59f8)。
+
+    opkg 自己按 Debian 版本算法比，这里只需判断「目标是不是比已装的老」，
+    用来决定要不要给 opkg 加 --force-downgrade（否则它直接拒绝降级、exit 1，
+    而包其实一个字节都没装进去）。
+    """
+    base, _, rest = (v or "").partition("+")
+    nums = [int(x) for x in re.findall(r"\d+", base)[:3]]
+    nums += [0] * (3 - len(nums))
+    date = sha = 0
+    m = re.search(r"git(\d{8})\.([0-9a-fA-F]{7,40})", rest or v or "")
+    if m:
+        date = int(m.group(1))
+        try:
+            sha = int(m.group(2)[:8], 16)
+        except ValueError:
+            sha = 0
+    return (nums[0], nums[1], nums[2], date, sha)
 
 
 def run(c, cmd, timeout=180):
@@ -166,10 +188,21 @@ def main():
         print("== uploaded %s (%.1f KiB, %.1fs)" % (f.name, f.stat().st_size / 1024, time.time() - t0))
     sftp.close()
 
+    m = re.match(r"workbuddy2api_(?P<ver>.+)-(?P<rel>[0-9]+)_", main_ipk.name)
+    target_ver = m.group("ver") if m else None
+    downgrade = False
+    if installed and target_ver and ver_key(target_ver) < ver_key(installed.rsplit("-", 1)[0]):
+        downgrade = True
+        print("== 目标 %s 低于已装 %s，安装时带 --force-downgrade" % (target_ver, installed))
+
+    failed = []
     for path in remote:
+        cmd = "opkg install %s%s 2>&1" % ("--force-downgrade " if downgrade else "", path)
         print("\n== opkg install %s" % path)
-        code, o, e = run(c, "opkg install %s 2>&1" % path, timeout=240)
+        code, o, e = run(c, cmd, timeout=240)
         print("[exit %d]" % code)
+        if code != 0:
+            failed.append((path, code, o, e))
 
     print("\n== files")
     run(c, "ls -l /usr/bin/wb2api /etc/init.d/workbuddy2api /etc/workbuddy2api/config.json "
@@ -199,6 +232,13 @@ def main():
     run(c, "logread -e workbuddy2api | tail -8")
 
     c.close()
+    if failed:
+        print("\n== 失败 %d 个包（opkg 非零退出，版本未变）" % len(failed))
+        for path, code, o, e in failed:
+            print("  %s -> exit %d" % (path, code))
+            for line in (o + e).strip().splitlines()[-4:]:
+                print("    " + line)
+        return 1
     print("\n== done")
     return 0
 

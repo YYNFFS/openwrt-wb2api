@@ -106,8 +106,8 @@ jobs:
             echo
             echo '```sh'
             echo "# OpenWrt 24.10+，架构按 uname -m / cat /etc/openwrt_release 的 DISTRIB_ARCH 选"
-            echo "opkg install workbuddy2api_${{ steps.ver.outputs.version }}_aarch64_cortex-a53.ipk"
-            echo "opkg install luci-app-workbuddy2api_${{ steps.ver.outputs.version }}_all.ipk"
+            echo "opkg install workbuddy2api_${{ steps.ver.outputs.version }}-1_aarch64_cortex-a53.ipk"
+            echo "opkg install luci-app-workbuddy2api_${{ steps.ver.outputs.version }}-1_all.ipk"
             echo '```'
             echo
             echo "- 22.03 / 23.05 请装文件名带 \`-legacy\` 的 ar 容器版本"
@@ -124,7 +124,12 @@ jobs:
                 *-legacy.ipk) c="ar (legacy)" ;;
                 *) c="tar.gz" ;;
               esac
-              a=$(echo "$b" | sed -E 's/^[a-z0-9-]+_[^_]+_([a-z0-9_.-]+?)(-legacy)?\.ipk$/\1/')
+              # 先切掉容器后缀再取架构段。文件名是 <包名>_<版本>-<rel>_<架构>，
+              # 包名与版本里都没有下划线，所以连去两段剩下的就是架构（架构本身带下划线，不能取最后一段）
+              a=${b%-legacy.ipk}
+              a=${a%.ipk}
+              a=${a#*_}
+              a=${a#*_}
               echo "| \`$b\` | $a | $c |"
             done
           } > RELEASE_NOTES.md
