@@ -1,1 +1,1 @@
-feat(mcp): generate_video 暴露三个 reference_* 参数
+fix(models): 同域同名的优惠模型在列表里补上标签
