@@ -1,1 +1,1 @@
-fix(models): 同域同名的优惠模型在列表里补上标签
+merge PR #285: 独立的 ::browser-complete 控制标记不再当正文透传，改发一次续写
