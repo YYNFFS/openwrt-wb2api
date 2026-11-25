@@ -1,1 +1,1 @@
-feat(panel): 错误汇总可标为已读；账号池可批量导出
+fix(embeddings): 11353（TEI 413）归请求级；面板按 cool_kind 判熔断（#290）
