@@ -1,1 +1,1 @@
-merge PR #285: 独立的 ::browser-complete 控制标记不再当正文透传，改发一次续写
+feat(panel): 错误汇总可标为已读；账号池可批量导出
