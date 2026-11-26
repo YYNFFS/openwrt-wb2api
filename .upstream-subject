@@ -1,1 +1,1 @@
-fix(upstream): TraeCode 自述句进脱敏表（参考 hub 2026-11-24 CN 池实测）
+docs(readme): 补 embeddings 单条 input 上限与 input_too_large（#290）
