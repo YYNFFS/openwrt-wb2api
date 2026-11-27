@@ -1,1 +1,1 @@
-docs(readme): 补 embeddings 单条 input 上限与 input_too_large（#290）
+feat(pool,panel): 标出「不可续期」的号，给出 access token 倒计时（#296）

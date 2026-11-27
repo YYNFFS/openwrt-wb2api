@@ -4,7 +4,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-workbuddy2api
-PKG_VERSION:=1.15.0+git20261126.e21b97f
+PKG_VERSION:=1.15.0+git20261127.89c3c93
 PKG_RELEASE:=1
 
 PKG_LICENSE:=MIT
