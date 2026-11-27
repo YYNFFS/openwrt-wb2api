@@ -54,7 +54,7 @@
     "keepalive_hours": [
       22
     ],
-    "keepalive_refresh_window": "168h",
+    "keepalive_refresh_window": "720h",
     "growth_hours": [
       11
     ],

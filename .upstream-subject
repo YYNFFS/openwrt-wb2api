@@ -1,1 +1,1 @@
-feat(pool,panel): 标出「不可续期」的号，给出 access token 倒计时（#296）
+fix(config): 保活临期窗口默认 168h → 720h，别让新号前 21 天裸奔（#296）
